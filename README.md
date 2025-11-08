@@ -1,4 +1,7 @@
-##Dual-branch seismic inversion via time-to-depth mapping for structurally guided detail recovery
+Dual-branch seismic inversion via time-to-depth mapping for structurally guided detail recovery
+
+
+
 While deep learning-based full waveform inversion (DL-FWI) offers an end-to-end solution, it overlooks the time--depth relationship inherent in conventional seismic processing and lacks a low-frequency-guided reconstruction strategy in conventional FWI, leading to structural distortions in deep formations.
 To address these issues, we propose TDMF-FWI, a physics-informed dual-branch FWI framework that achieves structurally guided detail enhancement by decoupling global background estimation from local detail recovery via learnable time-to-depth mapping modules.
 A shared \emph{time-domain module} first preprocesses raw seismic data by suppressing noise and extracting geologically coherent temporal features for both branches.
