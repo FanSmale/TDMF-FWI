@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on 2023/10/17 10:13
+Created on 2026/03/17 10:13
 
 @author: XUQIONG  (xuqiong@swpu.edu.cn)
 
@@ -13,14 +13,15 @@ import os
 import torch
 import time
 from torch.utils.data import DataLoader
+
 from net.InversionNet import *
 from net.ABA_FWI import *
 from PathConfig import *
 from data.data import *
 from data.loss import *
 from utils import *
-
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+from net.TDMF_FWI import *
+os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
 ################################################
 ########             NETWORK            ########
@@ -30,15 +31,13 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 cuda_available = torch.cuda.is_available()
 device = torch.device("cuda" if cuda_available else "cpu")
 
-net = InversionNet()
+net = TDMF_FWI()  # ABA_FWI  DST_FWI  TDMF_FWI
 net = net.to(device)
-net_d = Discriminator()
-net_d = net_d.to(device)
 
-optimizer_g = torch.optim.Adam(net.parameters(), lr=LearnRate)
-optimizer_d = torch.optim.Adam(net_d.parameters(), lr=LearnRate)
+# Optimizer we want to use
+optimizer = torch.optim.AdamW(net.parameters(), lr=LearnRate)
 
-# If ReUse, it will load saved model from premodel filepath and continue to train
+# If ReUse, it will load saved model from premodelfilepath and continue to train
 if ReUse:
     print('***************** 加载预先训练的模型 *****************')
     print('')
@@ -54,10 +53,10 @@ print('***************** 正在加载训练数据集 *****************')
 
 dataset_dir = Data_path
 
-trainSet = Dataset_openfwi(dataset_dir, TrainSize, 1, "seismic", "train")
+trainSet = Dataset_openfwi4(dataset_dir, TrainSize, 1, "seismic", "train")
 train_loader = DataLoader(trainSet, batch_size=BatchSize, shuffle=True)
 
-valSet = Dataset_openfwi(dataset_dir, ValSize, 1, "seismic", "test")
+valSet = Dataset_openfwi4(dataset_dir, ValSize, 1, "seismic", "test")
 val_loader = DataLoader(valSet, batch_size=BatchSize, shuffle=True)
 
 ################################################
@@ -84,25 +83,19 @@ loss1 = 0.0
 step = int(TrainSize / BatchSize)
 start = time.time()
 
-n_critic = 5
-max_itr = len(train_loader)
-
 
 def train():
-    total_loss_g = 0
-    total_loss_d = 0
-
+    total_loss = 0
     net.train()
-    net_d.train()
 
-    iter_g = 0
-    for i, (seismic_datas, vmodels) in enumerate(train_loader):
+    for i, (seismic_datas, vmodels, edges) in enumerate(train_loader):
 
         seismic_datas = seismic_datas[0].to(device)
         vmodels = vmodels[0].to(device)
+        edges = edges[0].to(device)
 
-        optimizer_d.zero_grad()
-
+        # Zero the gradient buffer
+        optimizer.zero_grad()
 
         if NoiseFlag:
             # 添加高斯噪声
@@ -111,29 +104,48 @@ def train():
             noise = torch.normal(mean=noise_mean, std=noise_std, size=seismic_datas.shape).to(device)
             seismic_datas = seismic_datas + noise
 
-        with torch.no_grad():
-            outputs = net(seismic_datas)
+        outputs = net(seismic_datas)
 
-        criterion_d = Wasserstein_GP(device, 10)
-        loss_d, loss_diff, loss_gp = criterion_d(vmodels, outputs, net_d)
-        loss_d.backward()
-        optimizer_d.step()
-        total_loss_d += loss_d.item()
+        outputs = outputs.to(torch.float32)
+        vmodels = vmodels.to(torch.float32)
+        edges = edges.to(torch.float32)
 
-        if ((i + 1) % n_critic == 0) or (i == max_itr - 1):
-            optimizer_g.zero_grad()
-            outputs = net(seismic_datas)
+        loss_g1v = l1loss(outputs, vmodels)
+        loss_g2v = l2loss(outputs, vmodels)
+        loss_tv = loss_tv1(outputs, vmodels, edges)
+        # loss_f = loss_fourier(outputs, vmodels)
 
-            loss_g, loss_g1v, loss_g2v = criterion_g(outputs, vmodels, net_d)
-            loss_g.backward()
-            optimizer_g.step()
-            total_loss_g += loss_g.item()
-            iter_g = iter_g + 1
+        #w = 1.0 / (1.0 + np.exp(-(epoch - Epochs // 2) / 10.0))
+        # epoch_end = 70
+        # w = max(0.0, 0.1 * (1.0 - epoch / epoch_end))
+        # epoch_end = 200  # 与总 epoch 一致
+        # w = max(0.02, 0.1 * (1.0 - epoch / epoch_end))  # 保留底噪
+        loss = loss_g1v + loss_g2v + loss_tv  # RCTB loss   一直在用的****
+        # loss = loss_g2v + w * (loss_g1v + loss_tv) + (1 - w) * loss_fouriers
+        #loss = loss_g2v + loss_g1v + loss_tv + w * loss_f
 
-    avg_loss_g = total_loss_g / iter_g
-    avg_loss_d = total_loss_d / len(train_loader)
 
-    return avg_loss_g, avg_loss_d
+        if np.isnan(float(loss.item())):
+            raise ValueError('loss is nan while training')
+
+        total_loss += loss.item()
+
+        loss = loss.to(torch.float32)
+        loss.backward()
+
+        # Optimize
+        optimizer.step()
+
+    avg_loss = total_loss / len(train_loader)
+    # print(f"Epoch {epoch}: g2v={loss_g2v.item():.4f}, "
+    #       f"g1v={loss_g1v.item():.4f}, tv={loss_tv.item():.4f}, "
+    #       f"fourier={loss_f.item():.4f}")
+    print(f"Epoch {epoch}: g2v={loss_g2v.item():.4f}, "
+          f"g1v={loss_g1v.item():.4f}, tv={loss_tv.item():.4f} ")
+    print(len(train_loader))
+    # print(total_loss)
+    # print(avg_loss)
+    return avg_loss
 
 
 def validate():
@@ -141,18 +153,22 @@ def validate():
     net.eval()
 
     with torch.no_grad():
-        for i, (seismic_datas, vmodels) in enumerate(val_loader):
+        for i, (seismic_datas, vmodels, edges) in enumerate(val_loader):
             seismic_datas = seismic_datas[0].to(device)
             vmodels = vmodels[0].to(device)
+            edges = edges[0].to(device)
 
             outputs = net(seismic_datas)
 
             outputs = outputs.to(torch.float32)
             vmodels = vmodels.to(torch.float32)
+            edges = edges.to(torch.float32)
 
+            loss_tv = loss_tv1(outputs, vmodels, edges)
             loss_g1v = l1loss(outputs, vmodels)
             loss_g2v = l2loss(outputs, vmodels)
-            loss = loss_g1v + loss_g2v
+
+            loss = loss_g1v + loss_g2v + loss_tv    # RCTB loss
 
             total_loss += loss.item()
 
@@ -160,31 +176,29 @@ def validate():
     return avg_loss
 
 
-train_loss_list_g = 0
-train_loss_list_d = 0
+train_loss_list = 0
 val_loss_list = 0
 
 for epoch in range(Epochs):
     epoch_loss = 0.0
     since = time.time()
 
-    train_loss_g, train_loss_d = train()
-    val_loss = validate()
+    train_loss = train()
+    # val_loss = validate()
 
     if (epoch % 1) == 0:
-        print(f"Epoch: {epoch + 1}, Train loss:{train_loss_g:.4f},Val loss: {val_loss: .4f}")
+        # print(f"Epoch: {epoch + 1}, Train loss:{train_loss:.4f},Val loss: {val_loss: .4f}")
+        print(f"Epoch: {epoch + 1}, Train loss:{train_loss:.4f}")
         time_elapsed = time.time() - since
         print('Epoch consuming time: {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
 
     # Save net parameters every 10 epochs
     if (epoch + 1) % SaveEpoch == 0:
         torch.save(net.state_dict(), train_result_dir + ModelName + '_epoch' + str(epoch + 1) + '.pkl')
-        torch.save(net_d.state_dict(), train_result_dir + ModelName + '_d_epoch' + str(epoch + 1) + '.pkl')
         print('Trained model saved: %d percent completed' % int((epoch + 1) * 100 / Epochs))
 
-    train_loss_list_g = np.append(train_loss_list_g, train_loss_g)
-    train_loss_list_d = np.append(train_loss_list_d, train_loss_d)
-    val_loss_list = np.append(val_loss_list, val_loss)
+    train_loss_list = np.append(train_loss_list, train_loss)
+    # val_loss_list = np.append(val_loss_list, val_loss)
 
 # Record the consuming time
 time_elapsed = time.time() - start
@@ -200,8 +214,8 @@ font3 = {'family': 'Times New Roman',
          'size': 21,
          }
 
-SaveTrainValidGANResults(train_loss_g=train_loss_list_g, train_loss_d=train_loss_list_d, val_loss=val_loss_list, SavePath=train_result_dir, ModelName=ModelName, font2=font2, font3=font3)
-
+# SaveTrainValidResults(train_loss=train_loss_list, val_loss=val_loss_list, SavePath=train_result_dir, ModelName=ModelName, font2=font2, font3=font3)
+SaveTrainResults(loss=train_loss_list, SavePath=train_result_dir, ModelName=ModelName, font2=font2, font3=font3)
 
 
 

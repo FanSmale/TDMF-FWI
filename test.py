@@ -11,14 +11,15 @@ Created on 2024/08/25 9:24
 ################################################
 import time
 from net.ABA_FWI import *
-from net.TDMF_FWI import *
 from net.InversionNet import *
+from net.TDMF_FWI import *
 from data.data import *
 from data.show import *
 from net.DDNet70 import *
 from data.loss import *
 
 import os
+
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
@@ -30,12 +31,9 @@ cuda_available = torch.cuda.is_available()
 device = torch.device('cuda' if cuda_available else 'cpu')
 
 model_file = train_result_dir + PreModelname
-# model_file  = 'D:/Xu-Qiong/ABA-FWI_2.0/model/CurveVelA_ABA-FWI.pkl'
-# FlatVelA_InversionNet.pkl   CL_FlatVelA_DDNet70.pkl
-# FlatFaultA_InversionNet.pkl   CL_FlatFaultA_DDNet70.pkl
-# CurveVelA_InversionNet.pkl    CL_CurveVelA_DDNet70.pkl
-# CurveFaultA_InversionNet.pkl    CurveFaultA_DDNet70.pkl
-net = DST_FWI()  # InversionNet | VelocityGAN | DDNet70Model | ABA_FWI |TS_FWI
+# model_file  = 'E:/Code/TDMF-FWI_model_2.0/CurveVelB_TDMF_FWI.pkl'
+# CurveVelB_TDMF_FWI.pkl  CurveFaultA_TDMF_FWI.pkl  CurveFaultB_TDMF_FWI.pkl
+net = TDMF_FWI()  # InversionNet | VelocityGAN | DDNet70Model | ABA_FWI | DST_FWI | TDMF-FWI  DST_FWI_G_L1_tanh
 model_param = torch.load(model_file, map_location=torch.device('cpu'))
 
 new_model_param = {}
@@ -118,9 +116,10 @@ for i, (seismic_datas, vmodels, edges, vmodel_max_min) in enumerate(test_loader)
         seismic_datas = seismic_datas + noise
 
     # Forward prediction
+    # outputs, _ = net(seismic_datas)  # for dd-net
     outputs = net(seismic_datas)
 
-    outputs = outputs.data.cpu().numpy()   #outputs = outputs[0].data.cpu().numpy()  for dd-net
+    outputs = outputs.data.cpu().numpy()
     outputs = np.where(outputs > 0.0, outputs, 0.0)
 
     gts = vmodels.data.cpu().numpy()
@@ -133,6 +132,7 @@ for i, (seismic_datas, vmodels, edges, vmodel_max_min) in enumerate(test_loader)
         pd = outputs[k, :, :, :].reshape(ModelDim[0], ModelDim[1])
         gt = gts[k, :, :, :].reshape(ModelDim[0], ModelDim[1])
         edge = edges[k, :, :, :].reshape(ModelDim[0], ModelDim[1])
+
         vmax = vmodel_max_min[k, 0]
         vmin = vmodel_max_min[k, 1]
 
@@ -145,9 +145,13 @@ for i, (seismic_datas, vmodels, edges, vmodel_max_min) in enumerate(test_loader)
             loss_tv = loss_tv1(output1, vmodel1, edge1)
             pd_N = pd * (vmax - vmin) + vmin
             gt_N = gt * (vmax - vmin) + vmin
+            # pd_N = (pd + 1.0) / 2.0 * (vmax - vmin) + vmin
+            # gt_N = (gt + 1.0) / 2.0 * (vmax - vmin) + vmin
             # pain_openfwi_velocity_model(pd_N)
             # pain_openfwi_velocity_model(gt_N)
             # pain_openfwi_velocity_model(edge)
+            # pain_openfwi_velocity_model(v_T2D1)
+            # pain_openfwi_velocity_model(D_mapped1)
         pd_N = pd * (vmax - vmin) + vmin
         gt_N = gt * (vmax - vmin) + vmin
         Prediction[i * TestBatchSize + k, :, :] = pd_N
@@ -176,7 +180,7 @@ for i, (seismic_datas, vmodels, edges, vmodel_max_min) in enumerate(test_loader)
         print('The %d testing psnr: %.2f, SSIM: %.4f, MSE:  %.4f, MAE:  %.4f, UQI:  %.4f, LPIPS: %.4f, BMSE:  %.4f, BMAE:  %.4f' % (total, psnr,
                                                                                                           ssim, mse,
                                                                                                           mae, uqi,
-                                                                                                          lpips,bmse,bmae))
+                                                                                                     lpips,bmse,bmae))
 
 SaveTestResults(Total_PSNR, Total_SSIM, Total_MSE, Total_MAE, Total_UQI, Total_LPIPS, Total_BMSE, Total_BMAE,
                 Prediction, GT, test_result_dir)

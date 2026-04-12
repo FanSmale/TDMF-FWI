@@ -27,7 +27,7 @@ os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 cuda_available = torch.cuda.is_available()
 device = torch.device("cuda" if cuda_available else "cpu")
 
-net = DDNet70Model()  # InversionNet | ABA_Net | DDNet70Model
+net = DDNet70Model()  # InversionNet | ABA_Net | DDNet70Model  DDNet70Model
 net = net.to(device)
 
 # Optimizer we want to use

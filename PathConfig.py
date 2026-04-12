@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on 2023/10/17 11:01
+Created on 2025/10/17 11:01
 
 @author: XUQIONG  (xuqiong@swpu.edu.cn)
 
@@ -11,14 +11,14 @@ from ParamConfig import *
 ###################################################
 ####                DATA   PATHS              #####
 ###################################################
-Data_dir = 'F:/Data/OpenFWI/'  # 数据所在目录 D:/Data/OpenFWI/  F:/Data/Marmousi/
+Data_dir = 'F:/Data/OpenFWI/'
 DataSet = Dataset_name + '/'
 Data_path = Data_dir + DataSet
 
 ###################################################
 ####            RESULT   PATHS                #####
 ###################################################
-main_dir = 'E:/Code/DST_FWI_3.0/'  # 当前工作目录
+main_dir = 'E:/Code/DST_FWI_base_5.0/'  # 当前工作目录
 
 # Check the main directory
 if len(main_dir) == 0:
@@ -41,13 +41,10 @@ else:
 ####################################################
 ####                   FileName                #####
 ####################################################
-# You can set model name for training.
-# For comparative experiment. InversionNet  VelocityGAN
-# For ablation experiment.  ABA-Net ABA-Loss ABA-FWI
-NoiseFlag = False  # If True add noise.
-modelName = 'Noise_DST_FWI'
-# VelocityGAN | InversionNet | DD-Net70
-# ABA-Net | ABA-Loss | ABA-FWI
+
+NoiseFlag = False  # | False | True  # If True add noise.
+modelName = 'TDMF-FWI'
+# VelocityGAN | InversionNet | DD-Net70 | ABA-FWI | DST-FWI | TDMF-FWI
 
 tagM1 = '_TrainSize' + str(TrainSize)
 tagM2 = '_Epoch' + str(Epochs)
@@ -57,5 +54,5 @@ tagM4 = '_LR' + str(LearnRate)
 ModelName = modelName + tagM1 + tagM2 + tagM3 + tagM4
 
 # Load pre-trained model
-PreModelname = 'DST_FWI_TrainSize24000_Epoch200_BatchSize20_LR0.0001_epoch200.pkl'
+PreModelname = ''
 

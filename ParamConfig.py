@@ -10,7 +10,7 @@ Created on 2025/6/17 10:21
 ####             MAIN PARAMETERS                ####
 ####################################################
 OutChannel = 1  # 输出速度模型的通道数
-ReUse = False  # If False always re-train a network  False  True
+ReUse = False  #    True  False# If False always re-train a network  False  True
 dh = 10  # Space interval
 
 ####################################################
@@ -64,10 +64,10 @@ elif Dataset_name == 'CurveVelA':
     TestSize = 6000
     ValSize = 1000
 
-    BatchSize = 20
+    BatchSize = 10
     TestBatchSize = 5
     LearnRate = 1e-4
-    Epochs = 200
+    Epochs = 100
 
 elif Dataset_name == 'FlatFaultA':
     DataDim = [1000, 70]
@@ -106,7 +106,7 @@ elif Dataset_name == 'CurveFaultA':
     BatchSize = 20
     TestBatchSize = 5
     LearnRate = 1e-4
-    Epochs = 115
+    Epochs = 160
 
 
 elif Dataset_name == 'CurveFaultB':
@@ -120,7 +120,7 @@ elif Dataset_name == 'CurveFaultB':
     BatchSize = 20
     TestBatchSize = 5
     LearnRate = 1e-4
-    Epochs = 200
+    Epochs = 160
 
 elif Dataset_name == 'CurveVelB':
     DataDim = [1000, 70]
@@ -133,7 +133,7 @@ elif Dataset_name == 'CurveVelB':
     BatchSize = 20
     TestBatchSize = 5
     LearnRate = 1e-4
-    Epochs = 200
+    Epochs = 160
 
 elif Dataset_name == 'marmousi_70_70':
     DataDim = [1000, 70]
@@ -143,10 +143,10 @@ elif Dataset_name == 'marmousi_70_70':
     TestSize = 328
     ValSize = 328
 
-    BatchSize = 20
+    BatchSize = 10
     TestBatchSize = 5
     LearnRate = 1e-4
-    Epochs = 200
+    Epochs = 160
 
 elif Dataset_name == 'marmousi_100_100':
     DataDim = [1500, 100]

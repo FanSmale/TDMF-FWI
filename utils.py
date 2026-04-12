@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on 2025/10/17 11:15
+Created on 2023/10/17 11:15
 
 @author: XUQIONG  (xuqiong@swpu.edu.cn)
 
@@ -257,13 +257,15 @@ def SaveTestResults(TotPSNR, TotSSIM, ToMSE, ToMAE, ToUQI, ToLPIPS, ToBMSE, ToBM
         'ToBMSE': np.mean(ToBMSE),
         'ToBMAE': np.mean(ToBMAE),
     }
+    scipy.io.savemat(SavePath + ModelName + '_TestResults.mat', data)
+
     Test_data = pd.DataFrame(Test_data, index=[0])
     df = pd.concat([df, Test_data], ignore_index=True)
 
     # df = df.append(Test_data, ignore_index=True)
     df.to_excel(file_path, index=False)
 
-    scipy.io.savemat(SavePath + ModelName + '_TestResults.mat', data)
+
 
 def SaveSelectedTestResults(Prediction_N, GT_N, Model, Path):
     data = {}
