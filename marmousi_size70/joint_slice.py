@@ -144,7 +144,7 @@ if __name__ == '__main__':
     model_test_pd = np.copy(model_test_gt)
 
 
-    model_pd_path = "E:/Code/DST_FWI_3.0/test_result/marmousi_70_70/DST_FWI_TrainSize30926_Epoch200_BatchSize20_LR0.0001_TestResults.mat"
+    model_pd_path = "E:/Code/DST_FWI_4.0/test_result/marmousi_70_70/InversionNet.pkl_TrainSize30926_Epoch160_BatchSize20_LR0.0001_TestResults.mat"
     # IAEDN_WTUU_TrainSize30926_Epoch160_BatchSize20_LR0.0001_TestResults.mat
     # DD-Net70_TrainSize30926_Epoch160_BatchSize20_LR0.0001_TestResults.mat
     # InversionNet_TrainSize30926_Epoch160_BatchSize20_LR0.0001_TestResults.mat
@@ -174,20 +174,23 @@ if __name__ == '__main__':
 
     pain_marmousi_velocity_model_test(np.abs(model_test_gt-model_test_pd), 0, 1000)
     pain_marmousi_velocity_model_test(model_test_pd, vmin, vmax)
+    np.savez('InversionNet_data.npz', gt=model_test_gt, pd=model_test_pd, vmin = vmin, vmax = vmax)
 
-    fig = plt.figure(figsize=(0.7,5))   #3,5   1.5, 5
+    # fig = plt.figure(figsize=(0.7,5))   #3,5   1.5, 5
+    #
+    # ax1 = fig.add_subplot(1, 1, 1)
+    # ax1.imshow(np.abs(model_test_gt-model_test_pd), vmin=0, vmax=1000, cmap='jet')
+    # ax1.axis('off')
+    # ax1.set_title('InversionNet', font18)
 
-    ax1 = fig.add_subplot(1, 1, 1)
-    ax1.imshow(np.abs(model_test_gt-model_test_pd), vmin=0, vmax=1000, cmap='jet')
-    ax1.axis('off')
-    ax1.set_title('InversionNet', font18)
+
     # ax2 = fig.add_subplot(1, 2, 2)
     # ax2.imshow(model_test_gt, vmin=vmin, vmax=vmax, cmap='jet')
     # ax2.axis('off')
     # ax2.set_title('GT', font18)
     #ax2.tick_params(axis='both', which='both', length=0, labelsize=0)
 
-    plt.show()
+    # plt.show()
 
 
 

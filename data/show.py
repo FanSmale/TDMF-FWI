@@ -5,6 +5,8 @@ Created on 2023/10/20 9:05
 @author: XUQIONG  (xuqiong@swpu.edu.cn)
 
 """
+from contextlib import nullcontext
+
 import matplotlib.pylab as plt
 import matplotlib as mpl
 
@@ -79,7 +81,7 @@ def pain_openfwi_seismic_data(para_seismic_data):
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("top", size="3%", pad=0.3)
     plt.colorbar(im, ax=ax, cax=cax, orientation='horizontal')
-    plt.subplots_adjust(bottom=0.08, top=0.98, left=0.11, right=0.99)
+    plt.subplots_adjust(bottom=0.08, top=0.98, left=0.14, right=0.99)
 
     plt.show()
     plt.close()
@@ -148,6 +150,47 @@ def pain_openfwi_velocity_model1(para_velocity_model, min_velocity, max_velocity
 
     plt.show()
     #plt.savefig('DST-FWI_Res49.png')
+
+def pain_openfwi_velocity_model1_save(para_velocity_model, min_velocity, max_velocity, path_name = nullcontext, file_name = nullcontext, is_colorbar = 1):
+    '''
+    Plotting seismic data images of openfwi dataset
+
+    :param para_velocity_model: Velocity model (70 x 70) (numpy)
+    :param min_velocity:        Upper limit of velocity in the velocity model
+    :param max_velocity:        Lower limit of velocity in the velocity model
+    :param is_colorbar:         Whether to add a color bar (1 means add, 0 is the default, means don't add)
+    :return:
+    '''
+
+    if is_colorbar == 0:
+        fig, ax = plt.subplots(figsize=(6, 6), dpi=150)
+    else:
+        fig, ax = plt.subplots(figsize=(5.8, 6), dpi=150)
+
+    im = ax.imshow(para_velocity_model, extent=[0, 0.7, 0.7, 0], vmin=min_velocity, vmax=max_velocity)
+
+    ax.set_xlabel('Position (km)', font18)
+    ax.set_ylabel('Depth (km)', font18)
+    ax.set_xticks(np.linspace(0, 0.7, 8))
+    ax.set_yticks(np.linspace(0, 0.7, 8))
+    ax.set_xticklabels(labels=[0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7], size=18)
+    ax.set_yticklabels(labels=[0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7], size=18)
+
+    if is_colorbar == 0:
+        plt.subplots_adjust(bottom=0.11, top=0.95, left=0.11, right=0.95)
+    else:
+        plt.rcParams['font.size'] = 14      # Set colorbar font size
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("top", size="3%", pad=0.35)
+        plt.colorbar(im, ax=ax, cax=cax, orientation='horizontal',
+                     ticks=np.linspace(min_velocity, max_velocity, 7), format = mpl.ticker.StrMethodFormatter('{x:.0f}'))
+        plt.subplots_adjust(bottom=0.10, top=0.95, left=0.13, right=0.95)
+
+        # ✅ 关键：先保存，再显示！
+        full_path = path_name + file_name
+        plt.savefig(full_path, bbox_inches='tight')
+
+        plt.show()  # 显示后不影响已保存的图像
 
 
 def pain_marmousi_velocity_model(para_velocity_model, min_velocity, max_velocity, is_colorbar = 1):

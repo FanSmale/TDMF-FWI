@@ -120,6 +120,17 @@ def loss_tv_1p_edge_ref_w(pred, vmodels, edges):
     loss = loss / (vmodels.size(0) * torch.sum(edge_weight))
     return loss
 
+def loss_1p(pred, vmodels):
+    """
+    求两图像在两个方向上偏微分的一阶导数
+    """
+    pred_x, pred_y = total_variation_loss_xy(pred)
+    vmodel_ideal_x, vmodel_ideal_y = total_variation_loss_xy(vmodels)
+    total_variation = torch.abs(pred_x - vmodel_ideal_x) + torch.abs(pred_y - vmodel_ideal_y)
+    loss = torch.sum(total_variation)
+    loss = loss / (vmodels.size(0) * vmodels.size(1))
+    return loss
+
 def loss_tv1(pred, vmodels, edges):
     """
     求两图像在两个方向上偏微分的一阶导数   加反射系数权重
@@ -153,10 +164,198 @@ def loss_tv1(pred, vmodels, edges):
 
     loss = torch.sum(ref_variation)
 
-    a=vmodels.size(0)
-    b=torch.sum(edge_weight)
+    # a=vmodels.size(0)
+    # b=torch.sum(edge_weight)
     loss = loss / (vmodels.size(0) * torch.sum(edge_weight))
     return loss
+
+def loss_fourier(
+        m_pred: torch.Tensor,
+        m_true: torch.Tensor,
+        alpha_h: float = -2,  # vertical / height direction (e.g., depth)
+        alpha_w: float = 0,  # horizontal / width direction 水平方向不需要强力约束低频
+        eps: float = 1e-8,
+) -> torch.Tensor:
+    """
+    Fourier-domain loss for 2D velocity models of shape (B, 1, H, W).
+
+    Encourages matching low-wavenumber (large-scale) structures by weighting
+    the Fourier spectrum with |k_h|^alpha_h * |k_w|^alpha_w.
+
+    Args:
+        m_pred (torch.Tensor): Predicted model, shape (B, 1, H, W)
+        m_true (torch.Tensor): Ground truth model, same shape
+        alpha_h (float): Exponent for height (first spatial dim) wavenumbers
+        alpha_w (float): Exponent for width (second spatial dim) wavenumbers
+        eps (float): Small constant to avoid division by zero at k=0
+
+    Returns:
+        loss (torch.Tensor): Scalar (mean over batch)
+    """
+    # --- 1. Input validation ---
+    assert m_pred.shape == m_true.shape, f"Shape mismatch: {m_pred.shape} vs {m_true.shape}"
+    assert m_pred.ndim == 4 and m_pred.shape[1] == 1, "Expected input shape (B, 1, H, W)"
+
+    device = m_pred.device
+    dtype = m_pred.dtype
+
+    # Remove channel dimension: (B, 1, H, W) → (B, H, W)
+    m_pred = m_pred.squeeze(1)  # (B, H, W)
+    m_true = m_true.squeeze(1)  # (B, H, W)
+
+    B, H, W = m_pred.shape
+
+    # --- 2. 2D real FFT along last two dimensions ---
+    # rfft2 returns (B, H, W//2 + 1) complex tensor
+    m_pred_f = torch.fft.rfft2(m_pred, dim=(-2, -1))  # (B, H, K), K = W//2 + 1
+    m_true_f = torch.fft.rfft2(m_true, dim=(-2, -1))
+
+    _, H_f, W_f = m_pred_f.shape  # H_f = H, W_f = W//2 + 1
+
+    # --- 3. Create wavenumber grids ---
+    # Vertical (height/depth) wavenumbers: [0, 1, 2, ..., H-1]
+    k_h = torch.arange(H_f, device=device, dtype=dtype)  # (H,)
+
+    # Horizontal (width) wavenumbers: [0, 1, 2, ..., W_f-1]
+    k_w = torch.arange(W_f, device=device, dtype=dtype)  # (W_f,)
+
+    # Apply frequency weighting
+    # 安全加权：避免 k=0 处权重过大
+    weight_h = torch.where(k_h == 0, torch.tensor(1.0, device=device, dtype=dtype), (k_h + eps) ** alpha_h)
+    weight_w = torch.where(k_w == 0, torch.tensor(1.0, device=device, dtype=dtype), (k_w + eps) ** alpha_w)
+
+    # Form 2D weight grid via outer product: (H, W_f)
+    weights_2d = weight_h[:, None] * weight_w[None, :]  # (H, W_f)
+    '''
+    # 转为 numpy
+    w_np = weights_2d.cpu().numpy()
+    k_h_np = k_h.cpu().numpy()
+    k_w_np = k_w.cpu().numpy()
+
+    # 创建网格（注意：k_h 是 Y，k_w 是 X）
+    KX, KY = np.meshgrid(k_w_np, k_h_np)  # KX: (H, W_f), KY: (H, W_f)
+
+    # 使用对数尺度（避免动态范围过大）
+    Z = np.log10(w_np + 1e-12)  # log10(weight)
+
+    # 3D 绘图
+    fig = plt.figure(figsize=(10, 7))
+    ax = fig.add_subplot(111, projection='3d')
+
+    # 绘制曲面
+    surf = ax.plot_surface(KX, KY, Z, cmap='viridis', edgecolor='none', alpha=0.9)
+
+    # 标签
+    ax.set_xlabel('Horizontal wavenumber $k_x$')
+    ax.set_ylabel('Vertical wavenumber $k_z$')
+    ax.set_zlabel('log10(weight)')
+    ax.set_title(f'3D Weight Surface (α_h={alpha_h}, α_w={alpha_w})\nShape: {w_np.shape}')
+
+    # 添加颜色条
+    fig.colorbar(surf, shrink=0.5, aspect=15, label='log10(weight)')
+
+    plt.tight_layout()
+    plt.show()
+    '''
+    # Expand to batch: (1, H, W_f) → broadcast over B
+    weights_2d = weights_2d.unsqueeze(0)  # (1, H, W_f)
+
+    # --- 4. Compute weighted L2 loss in Fourier domain ---
+    diff = m_pred_f - m_true_f  # (B, H, W_f)
+    squared_error = torch.abs(diff) ** 2  # (B, H, W_f)
+    weighted_error = weights_2d * squared_error  # broadcasting over batch
+
+    weighted_sum = weighted_error.sum(dim=(-2, -1))  # (B,)
+
+    total_weight = weights_2d.sum()*70*36*100  # scalar
+    loss_per_sample = weighted_sum / total_weight
+
+    loss = 0.5 * loss_per_sample.mean()  # scalar
+
+    return loss
+
+def loss_fourier_mask(
+        m_pred: torch.Tensor,
+        m_true: torch.Tensor,
+        k_h_max: int = 25,   #10,           只约束前 k_h_max 个垂直频率（低频）
+        alpha_h: float = -0.4, #-1,   vertical / height direction (e.g., depth)
+        alpha_w: float = -0.1, # 0,  horizontal / width direction 水平方向不需要强力约束低频
+        eps: float = 1e-8,
+) -> torch.Tensor:
+    """
+    Fourier-domain loss for 2D velocity models of shape (B, 1, H, W).
+
+    Encourages matching low-wavenumber (large-scale) structures by weighting
+    the Fourier spectrum with |k_h|^alpha_h * |k_w|^alpha_w.
+
+    Args:
+        m_pred (torch.Tensor): Predicted model, shape (B, 1, H, W)
+        m_true (torch.Tensor): Ground truth model, same shape
+        alpha_h (float): Exponent for height (first spatial dim) wavenumbers
+        alpha_w (float): Exponent for width (second spatial dim) wavenumbers
+        eps (float): Small constant to avoid division by zero at k=0
+
+    Returns:
+        loss (torch.Tensor): Scalar (mean over batch)
+    """
+    # --- 1. Input validation ---
+    assert m_pred.shape == m_true.shape, f"Shape mismatch: {m_pred.shape} vs {m_true.shape}"
+    assert m_pred.ndim == 4 and m_pred.shape[1] == 1, "Expected input shape (B, 1, H, W)"
+
+    device = m_pred.device
+    dtype = m_pred.dtype
+
+    # Remove channel dimension: (B, 1, H, W) → (B, H, W)
+    m_pred = m_pred.squeeze(1)  # (B, H, W)
+    m_true = m_true.squeeze(1)  # (B, H, W)
+
+    B, H, W = m_pred.shape
+
+    # --- 2. 2D real FFT along last two dimensions ---
+    # rfft2 returns (B, H, W//2 + 1) complex tensor
+    m_pred_f = torch.fft.rfft2(m_pred, dim=(-2, -1))  # (B, H, K), K = W//2 + 1
+    m_true_f = torch.fft.rfft2(m_true, dim=(-2, -1))
+
+    _, H_f, W_f = m_pred_f.shape  # H_f = H, W_f = W//2 + 1
+
+    # --- 3. Create wavenumber grids ---
+    # Vertical (height/depth) wavenumbers: [0, 1, 2, ..., H-1]
+    k_h = torch.arange(H_f, device=device, dtype=dtype)  # (H,)
+
+    # Horizontal (width) wavenumbers: [0, 1, 2, ..., W_f-1]
+    k_w = torch.arange(W_f, device=device, dtype=dtype)  # (W_f,)
+
+    # 创建 2D 掩码：仅保留 k_h <= k_h_max 的行
+    mask_h = (k_h <= k_h_max).float()  # (H,)
+    mask_2d = mask_h[:, None]  # (H, 1) → 广播到 (H, W_f)
+
+    # Apply frequency weighting
+    # 安全加权：避免 k=0 处权重过大
+    weight_h = torch.where(k_h == 0, torch.tensor(1.0, device=device, dtype=dtype), (k_h + eps) ** alpha_h)
+    weight_w = torch.where(k_w == 0, torch.tensor(1.0, device=device, dtype=dtype), (k_w + eps) ** alpha_w)
+
+    # Form 2D weight grid via outer product: (H, W_f)
+    weights_2d = weight_h[:, None] * weight_w[None, :]  # (H, W_f)
+
+    weights_2d = weights_2d * mask_2d
+
+    # Expand to batch: (1, H, W_f) → broadcast over B
+    weights_2d = weights_2d.unsqueeze(0)  # (1, H, W_f)
+
+    # --- 4. Compute weighted L2 loss in Fourier domain ---
+    diff = m_pred_f - m_true_f  # (B, H, W_f)
+    squared_error = torch.abs(diff) ** 2  # (B, H, W_f)
+    weighted_error = weights_2d * squared_error  # broadcasting over batch
+
+    weighted_sum = weighted_error.sum(dim=(-2, -1))  # (B,)
+
+    total_weight = weights_2d.sum().clamp(min=eps)  # scalar
+    loss_per_sample = weighted_sum / total_weight
+
+    loss = 0.5 * loss_per_sample.mean()  # scalar
+
+    return loss
+
 
 
 l1loss = nn.L1Loss()

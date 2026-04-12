@@ -160,6 +160,7 @@ class Dataset_openfwi4_test(Dataset):
             vmodel_max_min[i, 0] = np.max(vm)
             vmodel_max_min[i, 1] = np.min(vm)
             label_set[i][0] = (vm - np.min(vm)) / (np.max(vm) - np.min(vm))
+            # label_set[i][0] = 2.0 * (vm - np.min(vm)) / (np.max(vm) - np.min(vm)) - 1.0 # 归一化 [ -1,1 ] 适应 tanh
 
         # ##################################################################################
         # Training set
@@ -194,7 +195,8 @@ class Dataset_openfwi4(Dataset):
         # for each sample
         for i in range(data_set.shape[0]):
             vm = label_set[i][0]
-            label_set[i][0] = (vm - np.min(vm)) / (np.max(vm) - np.min(vm))
+            # label_set[i][0] = 2.0 * (vm - np.min(vm)) / (np.max(vm) - np.min(vm)) - 1.0 # 归一化 [ -1,1 ] 适应 tanh
+            label_set[i][0] = (vm - np.min(vm)) / (np.max(vm) - np.min(vm)) # 归一化 [ 0,1 ] 适应 sigmoid
 
         # Training set
         self.seismic_data = TensorDataset(torch.from_numpy(data_set[:para_train_size, ...]).float())
